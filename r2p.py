@@ -23,19 +23,20 @@ Config.read("config.ini")
 home = expanduser("~")
 
 FFDirUnderHome = Config.getboolean("Main", "FanfictionDirectoryUnderHome")
-
+FFDirUnderHome = True
 if FFDirUnderHome:
     FanfictionFolder = home + Config.get("Main", "FanfictionDirectory")
 else:
     FanfictionFolder = Config.get("Main", "FanfictionDirectoryIfNotUnderHome")
-
+    
+if not os.path.exists(FanfictionFolder):
+        os.makedirs(FanfictionFolder)
+        
 headers = { 'User-Agent' : 'Mozilla/5.0' }
 
 #for use in Main function when spawning threads.
 def round_down(num, divisor):
     return num - (num%divisor)
-
-
 
 #title is actually the chapter number
 #storyDir is actually the title of the story
@@ -68,22 +69,34 @@ def GetStoryInfo(StoryID):
     chapterPage = urllib2.urlopen("https://www.fanfiction.net/s/" + StoryID + "/1")
     web_pg = chapterPage.read()
     cCount = re.search('- Chapters: (.*) - Words:', web_pg)
+     
     #print "Chapter Count: " + cCount.group(1)
     cTitle = re.search("<b class='xcontrast_txt'>" + "(.*)" + "</b>", web_pg)
     storyInfo = []
-    storyInfo.append(int(cCount.group(1)))
+    if cCount is None:
+        storyInfo.append(1)
+    else:
+        storyInfo.append(int(cCount.group(1)))
     storyInfo.append(cTitle.group(1))
     return storyInfo
 
 #Our main function for threading.
-def chapterGrabber(storyID, chapterStart, chapterEnd, storyTitle, num_chapters, result_queue):
-    for i in range(chapterStart,chapterEnd+1):
-        mSoup = BeautifulSoup(GetRawPageText(storyID, i))
+def chapterGrabber(storyID, chapterStart, chapterEnd, storyTitle, num_chapters, result_queue, oneChapter=False):
+    if not oneChapter:
+        for i in range(chapterStart,chapterEnd+1):
+            mSoup = BeautifulSoup(GetRawPageText(storyID, i))
+            result = mSoup.find(id='storytext')
+            output = "Writing Chapter: " + str(i)
+            result_queue.put(output)
+            WriteChapterText(result, str(i), FanfictionFolder + "epub files " + storyTitle + "/OEBPS")
+        if chapterEnd == num_chapters:
+            result_queue.put("done!",True)
+    else:
+        mSoup = BeautifulSoup(GetRawPageText(storyID, 1))
         result = mSoup.find(id='storytext')
-        output = "Writing Chapter: " + str(i)
+        output = "Writing Chapter: " + str(1)
         result_queue.put(output)
-        WriteChapterText(result, str(i), FanfictionFolder + "epub files " + storyTitle + "/OEBPS")
-    if chapterEnd == num_chapters:
+        WriteChapterText(result, str(1), FanfictionFolder + "epub files " + storyTitle + "/OEBPS")
         result_queue.put("done!",True)
 
 def parseHtmlFiles(storyTitle,numChapters):
@@ -110,7 +123,7 @@ def main():
     globalChunkSize = 5
 
     if len(sys.argv) > 1:
-        if len(sys.argv[1]) == 7:
+        if len(sys.argv[1]) == 7 or len(sys.argv[1]) == 8:
             mainStoryID = sys.argv[1]
         elif sys.argv[1] == "help":
             print """
@@ -146,7 +159,7 @@ def main():
     storyID = mainStoryID
     storyInfo = GetStoryInfo(storyID)
     print storyInfo
-    chunkSize = globalChunkSize
+    chunkSize = int(globalChunkSize)
     numChapters = storyInfo[0]
     storyTitle = storyInfo[1]
     
@@ -154,24 +167,27 @@ def main():
     print "Title: " + storyTitle
     book.title = storyTitle
     book.authors = ["Extracted by Nyxeka"]
-    
     numChaptersToGet = range(1,numChapters+1)
     #get our first set of chunks, these will be extracted <chunkSize> at a time.
     firstChunks = round_down(numChapters,chunkSize)
     #these will be the remaining chapters to pull.
     lastChunk = numChapters - firstChunks
-    
     processs = []
     result_queue = multiprocessing.Queue()
-    if firstChunks > 0:
-        for i in range(1,firstChunks/chunkSize+1):
-            process = multiprocessing.Process(target=chapterGrabber, args = [storyID,((i*chunkSize)-chunkSize)+1,i*chunkSize,storyTitle,firstChunks,result_queue])
-            print "Starting thread... " + str(i)
-            process.start()
-            #processs.append(process)
-    process = multiprocessing.Process(target=chapterGrabber, args = [storyID,firstChunks+1,firstChunks+lastChunk,storyTitle,firstChunks,result_queue])
-    print "Starting thread for last chunk"
-    process.start()    
+    if numChapters > 1:
+        if firstChunks > 0:
+            for i in range(1,firstChunks/chunkSize+1):
+                process = multiprocessing.Process(target=chapterGrabber, args = [storyID,((i*chunkSize)-chunkSize)+1,i*chunkSize,storyTitle,firstChunks,result_queue])
+                print "Starting thread... " + str(i)
+                process.start()
+                #processs.append(process)
+        process = multiprocessing.Process(target=chapterGrabber, args = [storyID,firstChunks+1,firstChunks+lastChunk,storyTitle,firstChunks,result_queue])
+        print "Starting thread for last chunk"
+        process.start()
+    else:
+        process = multiprocessing.Process(target=chapterGrabber, args = [storyID,firstChunks+1,firstChunks+lastChunk,storyTitle,firstChunks,result_queue, True])
+        print "Starting thread for last chunk"
+        process.start()
         
     while 1:
         string = result_queue.get()

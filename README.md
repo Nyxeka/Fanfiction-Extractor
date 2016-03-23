@@ -3,6 +3,9 @@ Fanfiction-Extractor
 
 Multi-threaded fanfiction extractor written in python
 
+This script was designed to download fanfiction stories from fanfiction.net, and then convert the downloaded text into an epub file. 
+epub is rather easy to make, being just a .zip file with a bunch of html files inside, one html file per chapter.
+
 Main: r2p.py
 
 Run with: python r2p.py [story-id] [|chunk-size]

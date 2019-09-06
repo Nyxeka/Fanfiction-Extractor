@@ -1,3 +1,6 @@
+// Copyright (c) Nicholas Hylands
+// I wrote the code, but feel free to use this anywhere without any reference to any license or anything whatsoever.
+
 from os.path import expanduser
 import urllib
 import urllib2
